@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ammo Inventory Tracker</title>
+  <style>
+    :root {
+      --bg-dark: #222;
+      --bg-light: #2a2a2a;
+      --accent: #6b8e23;
+      --text: #f0f0f0;
+      --button-bg: #6b8e23;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background-color: var(--bg-dark);
+      color: var(--text);
+      font-family: Arial, sans-serif;
+    }
+    header {
+      background-color: #1a1a1a;
+      text-align: center;
+      padding: 1rem;
+      font-size: 2rem;
+      text-transform: uppercase;
+      border-bottom: 2px solid var(--accent);
+    }
+    .container {
+      max-width: 900px;
+      margin: 1rem auto;
+      background: var(--bg-light);
+      padding: 1.5rem;
+      border-radius: 8px;
+      box-shadow: 0 0 10px #000;
+    }
+    h2, h3 {
+      text-align: center;
+      color: var(--accent);
+      text-transform: uppercase;
+      margin-top: 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+      background-color: #333;
+      color: var(--text);
+    }
+    th, td {
+      border: 1px solid #444;
+      padding: 0.7rem;
+      text-align: center;
+    }
+    th {
+      background-color: var(--accent);
+      color: #fff;
+    }
+    .section {
+      margin-top: 2rem;
+      padding: 1rem;
+      background-color: #383838;
+      border-radius: 6px;
+    }
+    form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      justify-content: center;
+      margin-top: 1rem;
+    }
+    form input, form textarea {
+      flex: 1 1 140px;
+      padding: 0.6rem;
+      border: 1px solid #555;
+      border-radius: 4px;
+      background-color: #222;
+      color: var(--text);
+    }
+    button {
+      background-color: var(--button-bg);
+      color: #fff;
+      border: none;
+      padding: 0.6rem 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    button:hover {
+      background-color: #556b2f;
+    }
+    .link-btn {
+      background: none;
+      color: var(--accent);
+      border: none;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    .back-btn {
+      margin-bottom: 1rem;
+    }
+    .subtract-form {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+    .subtract-form input {
+      width: 80px;
+      padding: 0.4rem;
+    }
+    .low-stock {
+      color: #ff6666;
+      font-weight: bold;
+    }
+    .lock-screen {
+      text-align: center;
+      margin-top: 5rem;
+    }
+    .lock-screen input {
+      padding: 0.5rem;
+      margin: 0.5rem;
+      border: 1px solid #555;
+      border-radius: 4px;
+      background-color: #222;
+      color: var(--text);
+    }
+    .error {
+      color: #ff6666;
+      margin-top: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <header>Ammo Inventory Tracker</header>
+  <div class="container" id="app"></div>
+  <script>
+    const STORAGE_KEY = 'ammoInventoryV4';
+    const LOW_STOCK_THRESHOLD = 100;
+    const PIN = '1776';
+    let ammoData = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+    let currentCaliber = null;
+    let currentBrand = null;
+    let currentGrain = null;
+    const app = document.getElementById('app');
+
+    if (sessionStorage.getItem('unlocked') === 'true') {
+      renderMainInventory();
+    } else {
+      renderLockScreen();
+    }
+
+    function saveData() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(ammoData));
+    }
+
+    function renderLockScreen() {
+      app.innerHTML = `
+        <div class="lock-screen">
+          <h2>Enter PIN to Unlock</h2>
+          <input type="password" id="pinInput" placeholder="PIN">
+          <button onclick="checkPIN()">Unlock</button>
+          <div id="error" class="error"></div>
+        </div>
+      `;
+    }
+
+    function checkPIN() {
+      const input = document.getElementById('pinInput').value.trim();
+      if (input === PIN) {
+        sessionStorage.setItem('unlocked', 'true');
+        renderMainInventory();
+      } else {
+        document.getElementById('error').innerText = 'Incorrect PIN. Please try again.';
+      }
+    }
+
+    function getCaliberData(caliber) {
+      return ammoData.find(c => c.caliber === caliber);
+    }
+
+    function getBrandGrainEntry(caliberData, brand, grain) {
+      return caliberData.entries.find(e => e.brand === brand && e.grain === grain);
+    }
+
+    function totalMoneySpent() {
+      return ammoData.reduce((sum, caliber) =>
+        sum + caliber.entries.reduce((eSum, entry) =>
+          eSum + entry.purchases.reduce((pSum, p) => pSum + p.pricePaid, 0), 0), 0);
+    }
+
+    function getTotalQtyForEntry(entry) {
+      return entry.purchases.reduce((sum, p) => sum + p.quantity, 0);
+    }
+
+    function getTotalQtyForCaliber(caliberData) {
+      return caliberData.entries.reduce((sum, e) => sum + getTotalQtyForEntry(e), 0);
+    }
+
+    function renderMainInventory() {
+      currentCaliber = null;
+      app.innerHTML = `
+        <h2>Main Inventory</h2>
+        <div class="section">
+          <table>
+            <thead>
+              <tr>
+                <th>Caliber</th>
+                <th>Total Quantity</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${ammoData.map(item => `
+                <tr>
+                  <td><button class="link-btn" onclick="viewCaliber('${item.caliber}')">${item.caliber}</button></td>
+                  <td>${getTotalQtyForCaliber(item)} ${getTotalQtyForCaliber(item) < LOW_STOCK_THRESHOLD ? '<span class="low-stock">⚠️ LOW</span>' : ''}</td>
+                  <td><button onclick="viewCaliber('${item.caliber}')">View Details</button></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <h2>Add New Purchase</h2>
+        <div class="section">
+          <form onsubmit="addPurchase(event)">
+            <input id="newCaliber" placeholder="Caliber" required>
+            <input id="newBrand" placeholder="Brand" required>
+            <input id="newGrain" placeholder="Grain" required>
+            <input id="newQuantity" type="number" placeholder="Quantity" required min="1">
+            <input id="newPrice" type="number" placeholder="Total Price Paid" required min="0">
+            <input id="newVendor" placeholder="Vendor" required>
+            <input id="newDate" type="date" required>
+            <textarea id="newNotes" placeholder="Notes (optional)"></textarea>
+            <button type="submit">Add Purchase</button>
+          </form>
+        </div>
+
+        <h3>Total Money Spent: $${totalMoneySpent().toFixed(2)}</h3>
+      `;
+    }
+
+    function renderCaliberDetail(caliber) {
+      currentCaliber = caliber;
+      const caliberData = getCaliberData(caliber);
+      if (!caliberData) return renderMainInventory();
+
+      app.innerHTML = `
+        <button class="back-btn" onclick="renderMainInventory()">← Back to Inventory</button>
+        <h2>${caliber} - Brand/Grain Inventory</h2>
+        <div class="section">
+          <table>
+            <thead>
+              <tr>
+                <th>Brand</th>
+                <th>Grain</th>
+                <th>Total Quantity</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${caliberData.entries.map(e => `
+                <tr>
+                  <td><button class="link-btn" onclick="viewBrandGrain('${caliber}','${e.brand}','${e.grain}')">${e.brand}</button></td>
+                  <td>${e.grain}</td>
+                  <td>${getTotalQtyForEntry(e)} ${getTotalQtyForEntry(e) < LOW_STOCK_THRESHOLD ? '<span class="low-stock">⚠️ LOW</span>' : ''}</td>
+                  <td><button onclick="viewBrandGrain('${caliber}','${e.brand}','${e.grain}')">View History</button></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function renderBrandGrainDetail(caliber, brand, grain) {
+      currentCaliber = caliber;
+      currentBrand = brand;
+      currentGrain = grain;
+
+      const caliberData = getCaliberData(caliber);
+      if (!caliberData) return renderMainInventory();
+      const entry = getBrandGrainEntry(caliberData, brand, grain);
+      if (!entry) return renderCaliberDetail(caliber);
+
+      const totalQty = getTotalQtyForEntry(entry);
+      const totalCost = entry.purchases.reduce((sum, p) => sum + p.pricePaid, 0);
+      const averageCostPerRound = totalCost / (totalQty || 1);
+
+      app.innerHTML = `
+        <button class="back-btn" onclick="renderCaliberDetail('${caliber}')">← Back to ${caliber}</button>
+        <h2>${caliber} - ${brand} ${grain}</h2>
+        <h3>Average Cost/Round: $${averageCostPerRound.toFixed(2)}</h3>
+        <div class="section">
+          <table>
+            <thead>
+              <tr>
+                <th>Quantity</th>
+                <th>Total Paid</th>
+                <th>$/Round</th>
+                <th>Vendor</th>
+                <th>Date</th>
+                <th>Notes</th>
+                <th>Subtract</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${entry.purchases.map((p,i) => `
+                <tr>
+                  <td>${p.quantity}</td>
+                  <td>$${p.pricePaid.toFixed(2)}</td>
+                  <td>$${(p.pricePaid / p.quantity).toFixed(2)}</td>
+                  <td>${p.vendor}</td>
+                  <td>${p.date}</td>
+                  <td>${p.notes || ''}</td>
+                  <td>
+                    <div class="subtract-form">
+                      <input type="number" id="subtract-${i}" min="1" placeholder="Used">
+                      <button onclick="subtractFromPurchase(${i})">Subtract</button>
+                    </div>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+        <h3>Total Quantity: ${totalQty}</h3>
+      `;
+    }
+
+    function addPurchase(event) {
+      event.preventDefault();
+      const caliber = document.getElementById('newCaliber').value.trim();
+      const brand = document.getElementById('newBrand').value.trim();
+      const grain = document.getElementById('newGrain').value.trim();
+      const quantity = parseInt(document.getElementById('newQuantity').value);
+      const pricePaid = parseFloat(document.getElementById('newPrice').value);
+      const vendor = document.getElementById('newVendor').value.trim();
+      const date = document.getElementById('newDate').value;
+      const notes = document.getElementById('newNotes').value.trim();
+
+      if (!caliber || !brand || !grain || quantity <= 0 || pricePaid < 0 || !vendor || !date) return;
+
+      let caliberData = getCaliberData(caliber);
+      if (!caliberData) {
+        caliberData = { caliber, entries: [] };
+        ammoData.push(caliberData);
+      }
+
+      let entry = getBrandGrainEntry(caliberData, brand, grain);
+      if (!entry) {
+        entry = { brand, grain, purchases: [] };
+        caliberData.entries.push(entry);
+      }
+
+      entry.purchases.push({ quantity, pricePaid, vendor, date, notes });
+      saveData();
+      renderMainInventory();
+    }
+
+    function subtractFromPurchase(index) {
+      const caliberData = getCaliberData(currentCaliber);
+      if (!caliberData) return;
+      const entry = getBrandGrainEntry(caliberData, currentBrand, currentGrain);
+      if (!entry) return;
+
+      const input = document.getElementById(`subtract-${index}`);
+      const amount = parseInt(input.value);
+      if (isNaN(amount) || amount <= 0) return;
+
+      if (entry.purchases[index].quantity >= amount) {
+        entry.purchases[index].quantity -= amount;
+      } else {
+        entry.purchases[index].quantity = 0;
+      }
+      saveData();
+      renderBrandGrainDetail(currentCaliber, currentBrand, currentGrain);
+    }
+
+    window.addPurchase = addPurchase;
+    window.viewCaliber = renderCaliberDetail;
+    window.viewBrandGrain = renderBrandGrainDetail;
+    window.subtractFromPurchase = subtractFromPurchase;
+  </script>
+</body>
+</html>
